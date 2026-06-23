@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dart_ping/dart_ping.dart';
@@ -119,17 +120,32 @@ class TcpPrinterConnector implements PrinterConnector<TcpPrinterInput> {
         _statusStreamController.add(status);
 
         // Create ping object with desired args
-        final ping = Ping('${model.ipAddress}', interval: 3, timeout: 7);
+        final ping = Ping(
+          model.ipAddress,
+          interval: 3,
+          timeout: 7,
+          // Spanish/OEM-codepage Windows emits non-UTF-8 bytes in ping output;
+          // decode leniently so it never throws a FormatException.
+          encoding: const Utf8Codec(allowMalformed: true),
+        );
 
         // Begin ping process and listen for output
-        ping.stream.listen((PingData data) {
-          if (data.error != null) {
-            debugPrint(' ----- ping error ${data.error}');
+        ping.stream.listen(
+          (event) {
+            if (event is PingError) {
+              debugPrint(' ----- ping error $event');
+              _socket?.destroy();
+              status = TCPStatus.none;
+              _statusStreamController.add(status);
+            }
+          },
+          onError: (error) {
+            debugPrint(' ----- ping stream error $error');
             _socket?.destroy();
             status = TCPStatus.none;
             _statusStreamController.add(status);
-          }
-        });
+          },
+        );
         listenSocket(ping);
       }
       return true;
